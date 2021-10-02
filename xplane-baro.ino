@@ -77,7 +77,6 @@ void setup() {
   pinMode(A0, INPUT); 
 
   Serial.println("Setting up the lc");
-
   lc.shutdown(0, false);
   lc.setIntensity(0, 15);
   lc.clearDisplay(0);
@@ -85,94 +84,56 @@ void setup() {
 
 void loop() {
 
+  switch(state) {
+    case STATE_IDLE: 
+      setup();
+      break;
+
+    case STATE_SEARCH:
+      searchForXPlane();
+      break;
+    
+    case STATE_READY:
+      ready();
+      break;
+  }
+
+}
+
+void ready() {
+  int packetSize = udp.parsePacket();
   pot = analogRead(A0);  
   float pot_baro = 31.0f - (float(pot/1023.00f) * 2.00f);
 
-  if (STATE_READY && 
-      pot_baro != current_baro) {// && 
-      // pot_baro > current_baro + 0.02f || 
-      // pot_baro < current_baro - 0.02f) {
-      writeFloat("sim/cockpit/misc/barometer_setting", pot_baro);
-      current_baro = pot_baro;
+  if (pot_baro != current_baro) {
+    writeFloat("sim/cockpit/misc/barometer_setting", pot_baro);
+    current_baro = pot_baro;
   }
 
   int i = sim_baro * 100;
   Serial.println("Pot Baro: " + String(pot_baro, 2) + ", Sim Baro: " + String(sim_baro,2) + ", I: " + String(i));
 
-  int thousandsDigit = (int)i/1000;
-  int hundredsDigit = ((int)i/100*100-(int)i/1000*1000)/100;
-  int tensDigit = ((int)i/10*10-(int)i/100*100)/10;
-  int onesDigit = (int)i-(int)i/10*10;
+  displayDigits(i);
 
-  lc.setDigit(0,3,thousandsDigit, false);
-  lc.setDigit(0,2,hundredsDigit, true);
-  lc.setDigit(0,1,tensDigit, false);
-  lc.setDigit(0,0,onesDigit, false);
-  
-  if (state == STATE_IDLE) {
-    setup();
-    return;
-  }
-  
-  int packetSize = udp.parsePacket();
-  if (!packetSize) {
-    if (state == STATE_SEARCH) {
-      Serial.print(".");
-      delay(250);
-      if (!retry--) {
-        Serial.println("not found");
-        delay(1000);
-        setup();
-        return;
-      }
-    }
-  }
-  else {
-    switch(state) {
-    case STATE_SEARCH:
-      if (udp.destinationIP() == multicastIP) {
-        char *buff = &buffer[1]; // For Alignment
-        xplane_ip = udp.remoteIP();
-        udp.read(buff, packetSize);
-        beacon_major_version = buff[5];
-        beacon_minor_version = buff[6];
-        application_host_id = *((int *) (buff+7));
-        versionNumber = *((int *) (buff+11));
-        receive_port = *((int *) (buff+15));
-        strcpy(xp_hostname, &buff[21]);
-        
-        String version = String(versionNumber/10000)+"."+String((versionNumber%10000)/100)+"r"+String(versionNumber%100);
-        String heading = " Found Version "+version+" running on "+String(xp_hostname)+" at IP ";
-        Serial.print(heading);
-        Serial.println(udp.remoteIP());
-        
-        state = STATE_READY;
-        udp.begin(my_port);
+  char *buff = &buffer[3];  // For alignment
+  udp.read(buff, packetSize);
+  String type =  String(buff).substring(0,4);
 
-        subscribe("sim/cockpit/misc/barometer_setting", 3, 42);
-      }
-      break;
-      
-    case STATE_READY:
-      char *buff = &buffer[3];  // For alignment
-      udp.read(buff, packetSize);
-      String type =  String(buff).substring(0,4);
-      if (type == "RREF") {
-        for (int offset = 5; offset < packetSize; offset += 8) {
-          int code = *((int *) (buff+offset));
-          float value = *((float *) (buff+offset+4));
-          switch(code) {                                              
-            case 42:
-              int x = value * 100;
-              if (x != 4800) {
-                sim_baro = value;
-              }
-              break;
+  if (type == "RREF") {
+    for (int offset = 5; offset < packetSize; offset += 8) {
+      int code = *((int *) (buff+offset));
+      float value = *((float *) (buff+offset+4));
+      switch(code) {                                              
+        case 42:
+          int x = value * 100;
+          if (x != 4800) {
+            sim_baro = value;
           }
-        }
+          break;
       }
     }
-  }   
+  }
+
   delay(100);
 }
 
@@ -213,4 +174,54 @@ void writeFloat(char *dref, float value) {
   Serial.print("Wrote dref \"");
   Serial.print(dref);
   Serial.println("\"");
+}
+
+void searchForXPlane() {
+  int packetSize = udp.parsePacket();
+  if (!packetSize) {
+    Serial.print(".");
+    delay(250);
+    if (!retry--) {
+      Serial.println("not found");
+      delay(1000);
+      setup();
+      return;
+    }
+  }
+
+  if (udp.destinationIP() == multicastIP) {
+    char *buff = &buffer[1]; // For Alignment
+    xplane_ip = udp.remoteIP();
+    udp.read(buff, packetSize);
+    beacon_major_version = buff[5];
+    beacon_minor_version = buff[6];
+    application_host_id = *((int *) (buff+7));
+    versionNumber = *((int *) (buff+11));
+    receive_port = *((int *) (buff+15));
+    strcpy(xp_hostname, &buff[21]);
+    
+    String version = String(versionNumber/10000)+"."+String((versionNumber%10000)/100)+"r"+String(versionNumber%100);
+    String heading = " Found Version "+version+" running on "+String(xp_hostname)+" at IP ";
+    Serial.print(heading);
+    Serial.println(udp.remoteIP());
+    
+    state = STATE_READY;
+    udp.begin(my_port);
+
+    subscribe("sim/cockpit/misc/barometer_setting", 3, 42);
+  }
+}
+
+
+void displayDigits(int i) {
+  Serial.println("Input int: {" + String(i) + "}");
+  int thousandsDigit = (int)i/1000;
+  int hundredsDigit = ((int)i/100*100-(int)i/1000*1000)/100;
+  int tensDigit = ((int)i/10*10-(int)i/100*100)/10;
+  int onesDigit = (int)i-(int)i/10*10;
+
+  lc.setDigit(0,3,thousandsDigit, false);
+  lc.setDigit(0,2,hundredsDigit, true);
+  lc.setDigit(0,1,tensDigit, false);
+  lc.setDigit(0,0,onesDigit, false);
 }
