@@ -1,0 +1,5 @@
+{
+    "sketch": "xplane-baro.ino",
+    "port": "/dev/cu.usbserial-0001",
+    "board": "esp8266:esp8266:nodemcuv2"
+}
