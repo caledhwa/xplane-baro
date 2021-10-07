@@ -6,8 +6,7 @@
 #include <WiFiUdp.h>
 #include <LedControl.h>
 
-String ssid = "Home-2001";
-String pskey = "bluedog2014";
+#include "env.h"
 
 #pragma region UDP-WIFI
 WiFiUDP udp;
@@ -249,10 +248,10 @@ void displayDigits(int i) {
 
 void connect() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pskey);
+  WiFi.begin(WIFI_SSID, WIFI_PWD);
 
   Serial.println("Attempting Connection to Network: ");
-  Serial.println(ssid);
+  Serial.println(WIFI_SSID);
 
   // Wait for connection
   while ((retry-- > 0) && (WiFi.status() != WL_CONNECTED)) {
