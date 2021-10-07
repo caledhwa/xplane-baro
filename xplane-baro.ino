@@ -7,6 +7,7 @@
 #include <LedControl.h>
 
 #include "env.h"
+#include "rotary.h"
 
 #pragma region UDP-WIFI
 WiFiUDP udp;
@@ -46,12 +47,9 @@ LedControl lc = LedControl(D7,D5,D4,1);
 #define ENC_DT D2
 #define ENC_SW D3
 
-int counter = 0;
-int currentStateCLK;
-int lastStateCLK;
 bool isButtonPressed = false;
 unsigned long lastButtonPress = 0;
-unsigned long lastTurn = 0;
+Rotary rotary = Rotary(ENC_DT, ENC_CLK);
 
 void IRAM_ATTR buttonPress() {
   if (isButtonPressed && millis() - lastButtonPress > 50) {
@@ -70,23 +68,13 @@ void updateBaro(int inc) {
   writeInt(BARO_DREF, display_baro);
 }
 
-void IRAM_ATTR updateEncoder(){
-
-	currentStateCLK = digitalRead(ENC_CLK);
-	
-  if (currentStateCLK != lastStateCLK && 
-      currentStateCLK == 1 && 
-      millis() - lastTurn > 50){
-	
-  	if (digitalRead(ENC_DT) != currentStateCLK) {
-      updateBaro(-1);
-		} else {
-      updateBaro(+1);
-		}
-  
-    lastTurn = millis();
-	}
-	lastStateCLK = currentStateCLK;
+void IRAM_ATTR rotate() {
+  unsigned char result = rotary.process();
+  if (result == DIR_CW) {
+    updateBaro(1);
+  } else if (result == DIR_CCW) {
+    updateBaro(-1);
+  }
 }
 
 void setup() {
@@ -105,13 +93,12 @@ void setup() {
 
   state = STATE_SEARCH;
 
-  pinMode(ENC_CLK, INPUT); // CLK
-  pinMode(ENC_DT, INPUT); // DT
-  pinMode(ENC_SW, INPUT_PULLUP); // SW
+  pinMode(ENC_CLK, INPUT); 
+  pinMode(ENC_DT, INPUT); 
+  pinMode(ENC_SW, INPUT_PULLUP); 
 
-  lastStateCLK = digitalRead(ENC_CLK);
-  attachInterrupt(ENC_CLK, updateEncoder, CHANGE);
-	attachInterrupt(ENC_DT, updateEncoder, CHANGE);
+  attachInterrupt(ENC_CLK, rotate, CHANGE);
+	attachInterrupt(ENC_DT, rotate, CHANGE);
   attachInterrupt(ENC_SW, buttonPress, RISING);
 }
 
