@@ -1,4 +1,4 @@
-#define VERSION 1.20
+#define VERSION 1.30
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -39,10 +39,7 @@ char buffer[1024];
 #define RREF "RREF"
 
 int state = STATE_IDLE;
-
-int pot = 0;
-float display_baro = 29.92;
-float sim_baro = 0;
+int display_baro = 2992;
 
 LedControl lc = LedControl(D7,D5,D4,1);
 
@@ -53,7 +50,6 @@ LedControl lc = LedControl(D7,D5,D4,1);
 int counter = 0;
 int currentStateCLK;
 int lastStateCLK;
-String currentDir ="";
 bool isButtonPressed = false;
 unsigned long lastButtonPress = 0;
 unsigned long lastTurn = 0;
@@ -65,31 +61,30 @@ void IRAM_ATTR buttonPress() {
   } else {
     Serial.println("Button pressed");
     isButtonPressed = true;
-    display_baro = 29.92f;
-    writeFloat(BARO_DREF, display_baro);
+    display_baro = 2992;
+    writeInt(BARO_DREF, display_baro);
   }
 }
 
 void updateBaro(int inc) {
-  int thousandInt = display_baro * 100;
-  int incrementValue = thousandInt + inc;
-  display_baro = incrementValue / 100.0f;
-  writeFloat(BARO_DREF, display_baro);
+  display_baro += inc;
+  writeInt(BARO_DREF, display_baro);
 }
 
 void IRAM_ATTR updateEncoder(){
+
 	currentStateCLK = digitalRead(ENC_CLK);
-	if (currentStateCLK != lastStateCLK  && currentStateCLK == 1 && millis() - lastTurn > 25){
-		if (digitalRead(ENC_DT) != currentStateCLK) {
+	
+  if (currentStateCLK != lastStateCLK && 
+      currentStateCLK == 1 && 
+      millis() - lastTurn > 50){
+	
+  	if (digitalRead(ENC_DT) != currentStateCLK) {
       updateBaro(-1);
-			counter --;
-			currentDir ="CCW";
 		} else {
       updateBaro(+1);
-			counter ++;
-			currentDir ="CW";
 		}
-		Serial.println("Direction: " + currentDir + ", " + String(counter) + ", " + String(display_baro,2));
+  
     lastTurn = millis();
 	}
 	lastStateCLK = currentStateCLK;
@@ -154,9 +149,9 @@ void ready() {
       float value = *((float *) (buff+offset+4));
       switch(code) {                                              
         case BARO_DREF_UID:
-          int x = value * 100;
+          int x = String(value * 100,0).toInt();
           Serial.println("Value: " + String(value) + ", X:" + String(x));
-          display_baro = value;
+          display_baro = x;
           break;
       }
     }
@@ -187,7 +182,10 @@ void subscribe(char *dref, uint32_t freq, uint32_t index) {
   Serial.println("\"");
 }
 
-void writeFloat(char *dref, float value) {
+void writeInt(char *dref, int i) {
+
+  float value = i / 100.0f;
+
   char buf[5 + 4 + 500];
 	strcpy(buf, "DREF");
 	memcpy(buf + 5, &value, 4);
@@ -198,9 +196,7 @@ void writeFloat(char *dref, float value) {
   udp.write(buf, sizeof(buf));
   udp.endPacket();
 
-  Serial.print("Wrote dref \"");
-  Serial.print(dref);
-  Serial.println("\"");
+  Serial.println("Wrote dref \"" + String(dref) + "\", " + String(value,2));
 }
 
 void searchForXPlane() {
@@ -239,8 +235,7 @@ void searchForXPlane() {
   }
 }
 
-void displayDigits(float input) {
-  int i = input * 100;
+void displayDigits(int i) {
   int thousandsDigit = (int)i/1000;
   int hundredsDigit = ((int)i/100*100-(int)i/1000*1000)/100;
   int tensDigit = ((int)i/10*10-(int)i/100*100)/10;
